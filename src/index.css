@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Dark-first theme. The app sets `class="dark"` on <html>; these tokens keep
+   the palette consistent across components. */
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #0b1120;
+  color: #e2e8f0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numeric tables read better with tabular figures. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thin scrollbars so wide tables don't feel heavy. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
