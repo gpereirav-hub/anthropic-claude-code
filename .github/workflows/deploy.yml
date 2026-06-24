@@ -1,11 +1,14 @@
 name: Deploy to GitHub Pages
 
-# Builds the Vite app and publishes it to GitHub Pages. Pages only deploys
-# from the default branch, so this runs on pushes to main (and can be triggered
-# manually). `configure-pages` with enablement auto-turns Pages on the first run.
+# Builds the Vite app and publishes it to GitHub Pages. Pages only deploys from
+# the repository's default branch, so this runs on pushes to the default branch
+# (currently the parlay-analyzer branch) and main, and can be triggered manually.
+# `configure-pages` with enablement auto-turns Pages on the first run.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - claude/parlay-analyzer-tool-jgdved
   workflow_dispatch:
 
 permissions:
