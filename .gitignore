@@ -19,3 +19,6 @@ npm-debug.log*
 # vite/vitest caches
 .vite/
 coverage/
+
+# TypeScript incremental build info
+*.tsbuildinfo

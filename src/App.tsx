@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import type { CorrelationPair, Leg, ParlaySettings } from "./lib/types";
 import { analyzeParlay } from "./lib/analyze";
+import { analysisContext } from "./lib/context";
 import { defaultSettings, newLeg, sampleLegs, uid } from "./state";
+import { getStoredKey, makeClient, storeKey, type ExtractionResult } from "./lib/ai";
 import { SettingsBar } from "./components/SettingsBar";
 import { LegCard } from "./components/LegCard";
 import { VerdictPanel } from "./components/VerdictPanel";
@@ -12,6 +14,9 @@ import { CorrelationPanel } from "./components/CorrelationPanel";
 import { BacktestPanel } from "./components/BacktestPanel";
 import { PoissonHelper } from "./components/PoissonHelper";
 import { MathBreakdown } from "./components/MathBreakdown";
+import { ScreenshotUploader } from "./components/ScreenshotUploader";
+import { ApiKeySetup } from "./components/ApiKeySetup";
+import { ChatPanel } from "./components/ChatPanel";
 import { Button, Card, Pill } from "./components/ui";
 import { signedPct } from "./format";
 
@@ -19,12 +24,21 @@ export default function App() {
   const [settings, setSettings] = useState<ParlaySettings>(defaultSettings);
   const [legs, setLegs] = useState<Leg[]>(sampleLegs);
   const [pairs, setPairs] = useState<CorrelationPair[]>([]);
+  const [apiKey, setApiKey] = useState<string>(() => getStoredKey());
+  const [extraction, setExtraction] = useState<ExtractionResult | null>(null);
+
+  const client = useMemo(() => (apiKey ? makeClient(apiKey) : null), [apiKey]);
 
   const active = legs.filter((l) => !l.voided);
 
   const analysis = useMemo(
     () => analyzeParlay(legs, pairs, settings),
     [legs, pairs, settings]
+  );
+
+  const chatContext = useMemo(
+    () => analysisContext(analysis, settings.displayFormat),
+    [analysis, settings.displayFormat]
   );
 
   // What-if: how does the parlay EV change if each leg is dropped?
@@ -45,6 +59,18 @@ export default function App() {
   };
   const addLeg = () => setLegs((prev) => [...prev, newLeg({ id: uid("leg") })]);
 
+  const saveKey = (key: string) => {
+    storeKey(key);
+    setApiKey(key);
+  };
+
+  const onExtracted = (r: ExtractionResult) => {
+    setLegs(r.legs);
+    setPairs([]);
+    setExtraction(r);
+    if (r.stake && r.stake > 0) setSettings((s) => ({ ...s, stake: r.stake! }));
+  };
+
   const hasParlay = analysis.activeCount >= 1;
 
   return (
@@ -52,6 +78,22 @@ export default function App() {
       <Header />
 
       <main className="mx-auto max-w-6xl space-y-5 px-4 py-6">
+        {/* AI-driven input: screenshot extraction + key setup */}
+        <div className="grid gap-5 lg:grid-cols-2">
+          <ScreenshotUploader client={client} onExtracted={onExtracted} />
+          <ApiKeySetup hasKey={!!apiKey} onSave={saveKey} />
+        </div>
+
+        {extraction && (
+          <div className="rounded-lg border border-sky-700/40 bg-sky-900/20 px-3 py-2 text-xs text-sky-200">
+            Read {extraction.legs.length} leg{extraction.legs.length === 1 ? "" : "s"}
+            {extraction.sportsbook ? ` from ${extraction.sportsbook}` : ""}
+            {extraction.stake ? ` · stake $${extraction.stake}` : ""}. Review the legs below and fix
+            anything misread.
+            {extraction.notes ? <span className="text-sky-300/80"> Note: {extraction.notes}</span> : null}
+          </div>
+        )}
+
         <SettingsBar settings={settings} onChange={setSettings} />
 
         {hasParlay ? (
@@ -59,7 +101,8 @@ export default function App() {
         ) : (
           <Card>
             <p className="text-sm text-slate-400">
-              Add at least one active leg to see the analysis. A single-leg "parlay" is analyzed too.
+              Drop a betslip screenshot above, or add a leg below, to see the analysis. A single-leg
+              "parlay" is analyzed too.
             </p>
           </Card>
         )}
@@ -108,6 +151,10 @@ export default function App() {
 
         {hasParlay && (
           <>
+            <VerdictAndChatNote />
+
+            <ChatPanel client={client} context={chatContext} hasParlay={hasParlay} />
+
             <LegTable a={analysis} pairs={pairs} />
 
             <div className="grid gap-5 lg:grid-cols-2">
@@ -174,6 +221,15 @@ export default function App() {
   );
 }
 
+function VerdictAndChatNote() {
+  return (
+    <p className="text-[11px] text-slate-600">
+      Have a question about the verdict below? Ask the assistant — it answers using the exact numbers
+      computed from your ticket.
+    </p>
+  );
+}
+
 function Header() {
   return (
     <header className="border-b border-slate-800 bg-slate-900/40 backdrop-blur">
@@ -193,13 +249,14 @@ function Header() {
           <div>
             <h1 className="text-lg font-bold tracking-tight text-slate-100">Parlay Analyzer</h1>
             <p className="text-xs text-slate-500">
-              True probability · vig stripped · EV · correlation · Monte Carlo — the honest numbers.
+              Screenshot → true probability, vig, EV, correlation, Monte Carlo — plus a chat that
+              explains it.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <Pill tone="info">100% client-side</Pill>
-          <Pill tone="default">no data leaves your browser</Pill>
+          <Pill tone="default">your API key, your browser</Pill>
         </div>
       </div>
     </header>
@@ -215,18 +272,17 @@ function ResponsibleFooter() {
         make that house edge undeniable, not to help you beat it.
       </p>
       <p>
-        Estimates are only as good as your inputs. Removing vig and modelling correlation gets you to
-        a <i>fair</i> number, but no model beats an efficient market consistently without a real,
-        durable edge. The break-even and risk-of-ruin readouts are there for a reason.
+        Estimates are only as good as your inputs. Screenshot reading can misread a price, and removing
+        vig only gets you to a <i>fair</i> number — no model beats an efficient market consistently
+        without a real, durable edge. The break-even and risk-of-ruin readouts are there for a reason.
       </p>
       <p>
         Bet only what you can afford to lose, respect the bankroll guardrail, and treat a "Sucker
         Bet" verdict as exactly that. If gambling stops being fun, call 1-800-GAMBLER.
       </p>
       <p className="text-slate-600">
-        Live odds, injury and weather feeds are stubbed as labelled hooks throughout — wire a real
-        provider into <code>marketSiblingsDecimal</code>, the context factors, and book quotes to go
-        from manual entry to automated.
+        Your Anthropic API key is stored only in your browser and used to call api.anthropic.com
+        directly. Live odds, injury and weather feeds remain labelled hooks throughout.
       </p>
     </footer>
   );
